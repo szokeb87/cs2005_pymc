@@ -1,1 +1,1 @@
-# cs2005_in_pymc
+# Cogley-Sargent (2005) in pymc
