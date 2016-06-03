@@ -4,6 +4,7 @@ from scipy.linalg import inv
 
 import pymc as pm
 from math import ceil
+from cogleysargent import *
 
 
 class Generate_prior(object):
@@ -21,7 +22,10 @@ class Generate_prior(object):
         self.numb_obs = self.T - self.L
 
         self.T0 = 4 * training_years - self.L + 1
-        self.T_training = self.T0 - self.L
+        if self.T0 > self.L:
+            self.T_training = self.T0 - self.L
+        else:
+            self.T_training = 0
 
     def create_YX(self):
         """
@@ -145,18 +149,6 @@ class Generate_prior(object):
         Q_bar = df*(3.5e-04)*P_bar  # prior covariance matrix for state innovations
         #TQ_bar = df*Q_bar;         # prior scaling matrix
 
-        S = np.hstack([np.eye(N * (L - 1)),
-                       np.zeros((N * (L - 1), N))])
-
-        A = np.vstack([theta_bar[1:numb_Xcols], theta_bar[1 + numb_Xcols:2 * numb_Xcols],
-                       theta_bar[1 + 2 * numb_Xcols:3 * numb_Xcols], S])
-        rr = np.linalg.eig(A)[0]
-        M = inv(np.eye(N * L) - A) @ np.vstack([np.asarray([[theta_bar[0]],
-                                                            [theta_bar[numb_Xcols]],
-                                                            [theta_bar[2*numb_Xcols]]]),
-                                                np.zeros((N * (L - 1), 1))])
-        mm = M[:3, 0]
-
         #--------------------------------------------------------------------------
         # (2) Priors for Stock Volatility parameters:
         #--------------------------------------------------------------------------
@@ -178,7 +170,7 @@ class Generate_prior(object):
 
 
 
-def cs_model(Y_obs, X_obs, X1, theta_bar, b_bar, Pb_bar, a0, b0, lnh_bar, Ph_bar, P_bar=None, Q_bar=None):
+def cs_model(Y_obs, X_obs, X1, theta_bar, b_bar, Pb_bar, a0, b0, lnh_bar, Ph_bar, P_bar, Q_bar, filename):
     """
     Inputs:
         - Y_obs: LHS variables from the measurement equation ( shape must be TxK )
@@ -193,6 +185,8 @@ def cs_model(Y_obs, X_obs, X1, theta_bar, b_bar, Pb_bar, a0, b0, lnh_bar, Ph_bar
         - b_bar: prior mean for the betas  (K(K-1)/2 array)
         - Pb_bar: prior covariance for the betas ( [K(K-1)/2]x[K(K-1)/2] array)
 
+        - filename : (string) name of the storing file
+
     Outputs:
         - pymc model ready for sampling
     """
@@ -201,26 +195,26 @@ def cs_model(Y_obs, X_obs, X1, theta_bar, b_bar, Pb_bar, a0, b0, lnh_bar, Ph_bar
     K = Y_obs.shape[1]
     M = X_obs.shape[1]
     KM = theta_bar.size
-    J = int(K*(K-1)/2)
+    J = int(K * (K - 1) / 2)
 
     #---------------------------------------------------
     # Define the priors for Q^{-1}
     #---------------------------------------------------
-    Q_inv = pm.Wishart( "Q_inv", n = K*M+1, Tau = Q_bar )
+    Q_inv = pm.Wishart("Q_inv", n = K * M + 1, Tau = Q_bar)
 
     #---------------------------------------------------
     # Define Theta as a list containing the elements of theta^T
     #---------------------------------------------------
     Theta = [pm.MvNormalCov('Theta_0', theta_bar, P_bar)]
-    for i in range(1,T+1):
-        Theta.append(pm.MvNormal('Theta_%d' % i, Theta[i-1], Q_inv))
+    for i in range(1, T + 1):
+        Theta.append(pm.MvNormal('Theta_%d' % i, Theta[i - 1], Q_inv))
 
     #---------------------------------------------------
     # Define Sigma2 as a list containing all sigma^2_{i}
     #---------------------------------------------------
     Sigma2 = [pm.InverseGamma('sigma2_1', a0[0], b0[0])]
-    for i in range(1,K):
-        Sigma2.append(pm.InverseGamma('sigma2_%d' % (i+1), a0[i], b0[i]))
+    for i in range(1, K):
+        Sigma2.append(pm.InverseGamma('sigma2_%d' % (i + 1), a0[i], b0[i]))
 
     #---------------------------------------------------
     # Define LH as a list containing all ln(h_{i,t}) -- this is log( H^T )
@@ -230,43 +224,43 @@ def cs_model(Y_obs, X_obs, X1, theta_bar, b_bar, Pb_bar, a0, b0, lnh_bar, Ph_bar
     Cov_lnH = pm.Lambda('Cov_lnH', lambda s = Sigma2: np.diag(s) )
 
     LH = [pm.MvNormalCov('lnh_0', lnh_bar, Ph_bar)]
-    for i in range(1,T+1):
-        LH.append(pm.MvNormalCov('lnh_%d' % i, LH[i-1], Cov_lnH))
+    for i in range(1, T + 1):
+        LH.append(pm.MvNormalCov('lnh_%d' % i, LH[i - 1], Cov_lnH))
 
     #---------------------------------------------------
     # Define Betas: if K=1 (only one observable), there is no covariance
     #---------------------------------------------------
-    if J>0:
+    if J > 0:
         Betas = pm.MvNormalCov('betas', b_bar, Pb_bar)
     else:
         # by making it observed we fix the value of this stochastic variable
-        Betas = pm.MvNormalCov('betas', b_bar, Pb_bar, value = np.asarray([]), observed=True)
+        Betas = pm.MvNormalCov('betas', b_bar, Pb_bar, value = np.asarray([]), observed = True)
 
     #---------------------------------------------------
     # Y's are observed, but we have to define them as stochastic variables and set observed to True
     #---------------------------------------------------
 
     # Use deterministic variables for R_t and collect them in an ordered list
-    Binv = pm.Lambda('Binv', lambda b = Betas: inv(B_tril(b)) )
-    R = [pm.Lambda('R_%d' % 1, lambda b = Binv, lh = LH[1]: np.dot(b, np.diag(np.exp(lh)) ).dot(b.T) )]
+    Binv = pm.Lambda('Binv', lambda b = Betas: inv(B_tril(b)))
+    R = [pm.Lambda('R_%d' % 1, lambda b = Binv, lh = LH[1]: b @ np.diag(np.exp(lh)) @ b.T)]
 
     # Use deterministic variables for conditional means of Y_t -> list muY containing all
-    muY = [pm.Lambda('muY_%d' % 1, lambda yy = X_obs[0, :], th = Theta[1]: yy.dot(th.reshape(K,M).T) )]
+    muY = [pm.Lambda('muY_%d' % 1, lambda yy = X_obs[0, :], th = Theta[1]: yy @ th.reshape(K, M).T)]
 
-    y = [pm.MvNormalCov("Y_1", muY[0], R[0], value = Y_obs[0,:], observed=True)]
-    for i in range(1,T):
-        muY.append( pm.Lambda('muY_%d' % (i+1), lambda yy = X_obs[i, :], th = Theta[i+1]: yy.dot(th.reshape(K,M).T) ))
-        R.append( pm.Lambda('R_%d' % (i+1), lambda b = Binv, lh = LH[i+1]: np.dot(b,np.diag(np.exp(lh))).dot(b.T) ))
-        y.append(pm.MvNormalCov("Y_%d" % (i+1), muY[i], R[i], value = Y_obs[i,:], observed=True))
+    y = [pm.MvNormalCov("Y_1", muY[0], R[0], value = Y_obs[0,:], observed = True)]
+    for i in range(1, T):
+        muY.append(pm.Lambda('muY_%d' % (i + 1), lambda yy = X_obs[i, :], th = Theta[i + 1]: yy @ th.reshape(K, M).T))
+        R.append(pm.Lambda('R_%d' % (i + 1), lambda b = Binv, lh = LH[i + 1]: b @ np.diag(np.exp(lh)) @ b.T ))
+        y.append(pm.MvNormalCov("Y_%d" % (i + 1), muY[i], R[i], value = Y_obs[i,:], observed = True))
 
     # Need to convert the lists to pymc Container arrays
     Theta, muY, y, LH, R = pm.Container(Theta), pm.Container(muY), pm.Container(y), pm.Container(LH), pm.Container(R)
     Sigma2 = pm.Container(Sigma2)
 
     m = pm.Model([Theta, y, muY, Q_inv, LH, Sigma2, Betas, R, Cov_lnH])
-    mcmc = pm.MCMC(m)
+    mcmc = pm.MCMC(m, db = 'pickle', dbname = '../data/posterior_pymc/' + str(filename))
 
-    # Assign the step methods (from CS.py) to the unobserved stochastic variables
+    # Assign the step methods to the unobserved stochastic variables
     mcmc.use_step_method(ForwardBackward, Theta, y, R, Q_inv, X1)
     mcmc.use_step_method(W_Q, Q_inv, Theta)
     mcmc.use_step_method(IG_Sigma, Sigma2, LH)

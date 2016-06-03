@@ -6,7 +6,6 @@ import pymc as pm
 from numba import jit
 from math import ceil
 
-
 def B_tril(b):
     """_
     This function builds a lower triangular matrix from the elements of b (array), so
@@ -24,6 +23,7 @@ def B_tril(b):
         return B
     else:                   # if b is empty it gives back B=1
         return np.asarray([[1]])
+
 
 def order_list(self, stochastic):
     """
