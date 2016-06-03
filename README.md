@@ -1,6 +1,6 @@
 # Cogley and Sargent (2005) in `pymc`
 
-This repository is a collection of codes and jupyter notebooks that implement the time-varying parameter VAR (TVP-VAR) with stochastic volatility as it was discussed by [Cogley and Sargent (2005)](http://www.sciencedirect.com/science/article/pii/S1094202505000049) and estimate it with the Python package `pymc`.
+This repository is a collection of codes and jupyter notebooks that implement the time-varying parameter VAR (TVP-VAR) with stochastic volatility as it was discussed by [Cogley and Sargent (2005)](https://github.com/szokeb87/cs2005_pymc/blob/master/papers/CogleySargent(2005)_DriftAndVolatilities.pdf) and estimate it with the Python package `pymc`.
 
 There are three main notebooks:
  - [CogleySargent2005_replication.ipynb](https://github.com/szokeb87/cs2005_pymc/blob/master/notebooks/CogleySargent2005_replication.ipynb): this notebook replicates the paper using the same dataset and prior parameters. By means of a few illustrative figures it compares the `pymc` posterior sample with the sample drawn by Tim Cogley's Matlab files
